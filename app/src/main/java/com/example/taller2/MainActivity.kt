@@ -23,5 +23,9 @@ class MainActivity : AppCompatActivity() {
         binding.camara.setOnClickListener {
             startActivity(Intent(this, CamaraActivity::class.java))
         }
+
+        binding.mapas.setOnClickListener {
+            startActivity(Intent(this, MapasActivity::class.java))
+        }
     }
 }
