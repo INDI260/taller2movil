@@ -41,7 +41,9 @@ android {
 
 dependencies {
 
-    implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation(libs.androidx.preference.ktx)
+    implementation(libs.osmdroid.android)
+    implementation(libs.play.services.location)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
