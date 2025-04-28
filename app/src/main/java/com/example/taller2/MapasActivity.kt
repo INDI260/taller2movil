@@ -13,11 +13,13 @@ import com.google.android.gms.location.LocationRequest
 import android.os.Bundle
 import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.result.ActivityResultCallback
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.example.taller2.databinding.ActivityMapasBinding
 import com.example.taller2.entities.MyLocation
 import com.google.android.gms.common.api.ResolvableApiException
@@ -63,14 +65,23 @@ class MapasActivity : AppCompatActivity() {
     private val locationSettings =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult(),
             ActivityResultCallback {
-            if(it.
-                resultCode ==
-                RESULT_OK){
+            if(it.resultCode == RESULT_OK){
                 startLocationUpdates()
             }else{
-                //Show user a dialog to enable location
+                Toast.makeText(this, "No se pudo acceder a la ubicación", Toast.LENGTH_LONG).show()
             }
         })
+
+   private val locationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+        ActivityResultCallback {
+            if(it){
+                locationSettings()
+            }else{
+                Toast.makeText(this, "No se pudo acceder a la ubicación", Toast.LENGTH_LONG).show()
+            }
+        }
+    )
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,8 +93,7 @@ class MapasActivity : AppCompatActivity() {
         locationRequest = createLocationRequest()
         locationCallback = createLocationCallback()
 
-        Configuration.getInstance().load(this,
-            androidx.preference.PreferenceManager.getDefaultSharedPreferences(this))
+        Configuration.getInstance().load(this, androidx.preference.PreferenceManager.getDefaultSharedPreferences(this))
         map = binding.mapa
         map.setTileSource(TileSourceFactory.MAPNIK)
         map.setMultiTouchControls(true)
@@ -91,7 +101,22 @@ class MapasActivity : AppCompatActivity() {
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)!!
 
+    }
 
+    override fun onPause() {
+        super.onPause();
+        stopLocationUpdates();
+    }
+
+    override fun onResume() {
+        super.onResume()
+        map.onResume()
+        map.controller.setZoom(18.0)
+        locationPermission.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        val uims = getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
+        if(uims.nightMode == UiModeManager.MODE_NIGHT_YES){
+            map.overlayManager.tilesOverlay.setColorFilter(TilesOverlay.INVERT_COLORS)
+        }
     }
 
     private fun createLocationRequest() : LocationRequest{
@@ -115,20 +140,22 @@ class MapasActivity : AppCompatActivity() {
             override fun onLocationResult(result: LocationResult) {
                 super.onLocationResult(result)
                 if(result!=null){
-                    val location = result.
-                    lastLocation!!
-                    //updateUI(location)
+                    val location = result.lastLocation!!
+                    currentLocation = location
+                    map.controller.setCenter(GeoPoint(location.latitude, location.longitude))
+                    writeJSONObject()
+                    addMarker(location)
                 }
             }
         }
         return locationCallback
     }
 
-    fun locationSettings() {
+    private fun locationSettings() {
         val builder = LocationSettingsRequest.Builder().addLocationRequest(locationRequest)
         val client: SettingsClient = LocationServices.getSettingsClient(this)
         val task: Task<LocationSettingsResponse> = client.checkLocationSettings(builder.build())
-        task.addOnSuccessListener { locationSettingsResponse ->
+        task.addOnSuccessListener {
             // All location settings are satisfied. The client can initialize
             // location requests here.
             // ...
@@ -146,29 +173,11 @@ class MapasActivity : AppCompatActivity() {
                     ).build()
                     locationSettings.launch(isr)
                 } catch (sendEx: IntentSender.SendIntentException) {
-                    // Ignore the error.
+                    Toast.makeText(this, "El dispositivo no tiene GPS", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
-
-
-    override fun onPause() {
-        super.onPause();
-        stopLocationUpdates();
-    }
-
-    override fun onResume() {
-        super.onResume()
-        map.onResume()
-        map.controller.setZoom(18.0)
-        map.controller.animateTo(bogota)
-        val uims = getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
-        if(uims.nightMode == UiModeManager.MODE_NIGHT_YES){
-            map.overlayManager.tilesOverlay.setColorFilter(TilesOverlay.INVERT_COLORS)
-        }
-    }
-
 
     private fun stopLocationUpdates() {
         locationClient.removeLocationUpdates(locationCallback);
@@ -201,14 +210,18 @@ class MapasActivity : AppCompatActivity() {
         Log.i("LOCATION", "File modified at path: " + file)
     }
 
-    fun addMarker(){//Add Marker
-        val markerPoint = GeoPoint(4.62, -74.07)
+    fun addMarker(location : Location){//Add Marker
+        val markerPoint = GeoPoint(location.latitude, location.longitude)
         val marker = Marker(map)
         marker.title = "Mi Marcador"
-        //val myIcon = getResources().getDrawable(R.drawable.baseline_add_location_alt_24, this.getTheme())
-        //marker.setIcon(myIcon)
+        val myIcon = getResources().getDrawable(R.drawable.baseline_location_on_24, this.getTheme())
+        marker.icon = myIcon
         marker.setPosition(markerPoint)
         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
         map.overlays.add(marker)
+    }
+
+    fun removeMarkers(){
+        map.overlays.clear()
     }
 }
