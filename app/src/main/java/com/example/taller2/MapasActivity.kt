@@ -89,8 +89,7 @@ class MapasActivity : AppCompatActivity() {
         map.setMultiTouchControls(true)
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
-        lightSensor = sensorManager.getDefaultSensor(Sensor.
-        TYPE_LIGHT)!!
+        lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)!!
 
 
     }
