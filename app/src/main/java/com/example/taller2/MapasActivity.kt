@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.hardware.Sensor
+import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
@@ -43,6 +44,10 @@ import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
 import java.util.Date
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class MapasActivity : AppCompatActivity() {
 
@@ -57,7 +62,6 @@ class MapasActivity : AppCompatActivity() {
     private lateinit var map : MapView
     private val bogota = GeoPoint(4.62, -74.07)
 
-    //Sensor management
     private lateinit var sensorManager: SensorManager
     private lateinit var lightSensor : Sensor
     private lateinit var lightEventListener : SensorEventListener
@@ -100,12 +104,14 @@ class MapasActivity : AppCompatActivity() {
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)!!
+        lightEventListener = createLightSensorListener()
 
     }
 
     override fun onPause() {
         super.onPause();
         stopLocationUpdates();
+        sensorManager.unregisterListener(lightEventListener)
     }
 
     override fun onResume() {
@@ -113,10 +119,7 @@ class MapasActivity : AppCompatActivity() {
         map.onResume()
         map.controller.setZoom(18.0)
         locationPermission.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
-        val uims = getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
-        if(uims.nightMode == UiModeManager.MODE_NIGHT_YES){
-            map.overlayManager.tilesOverlay.setColorFilter(TilesOverlay.INVERT_COLORS)
-        }
+        sensorManager.registerListener(lightEventListener, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
     }
 
     private fun createLocationRequest() : LocationRequest{
@@ -139,13 +142,11 @@ class MapasActivity : AppCompatActivity() {
         val locationCallback = object : LocationCallback(){
             override fun onLocationResult(result: LocationResult) {
                 super.onLocationResult(result)
-                if(result!=null){
-                    val location = result.lastLocation!!
-                    currentLocation = location
-                    map.controller.setCenter(GeoPoint(location.latitude, location.longitude))
-                    writeJSONObject()
-                    addMarker(location)
-                }
+                val location = result.lastLocation!!
+                currentLocation = location
+                map.controller.setCenter(GeoPoint(location.latitude, location.longitude))
+                writeJSONObject()
+                addMarker(location)
             }
         }
         return locationCallback
@@ -186,10 +187,10 @@ class MapasActivity : AppCompatActivity() {
     fun distance(lat1 : Double, long1: Double, lat2:Double, long2:Double) : Double{
         val latDistance = Math.toRadians(lat1 - lat2)
         val lngDistance = Math.toRadians(long1 - long2)
-        val a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)+
-                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                Math.sin(lngDistance / 2) * Math.sin(lngDistance / 2)
-        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        val a = sin(latDistance / 2) * sin(latDistance / 2) +
+                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+                sin(lngDistance / 2) * sin(lngDistance / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a));
         val result = RADIUS_OF_EARTH_KM * c;
         return Math.round(result*100.0)/100.0;
     }
@@ -207,7 +208,7 @@ class MapasActivity : AppCompatActivity() {
         val output = BufferedWriter(FileWriter(file))
         output.write(locations.toString())
         output.close()
-        Log.i("LOCATION", "File modified at path: " + file)
+        Log.i("LOCATION", "File modified at path: $file")
     }
 
     fun addMarker(location : Location){//Add Marker
@@ -224,4 +225,26 @@ class MapasActivity : AppCompatActivity() {
     fun removeMarkers(){
         map.overlays.clear()
     }
+
+    private fun createLightSensorListener() : SensorEventListener{
+        val ret : SensorEventListener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                if(this@MapasActivity::map.isInitialized){
+                    if (event != null) {
+                        if(event.values[0] < 5000){
+                            map.overlayManager.tilesOverlay.setColorFilter(TilesOverlay.INVERT_COLORS)
+
+                        }
+                        else{
+                            map.overlayManager.tilesOverlay.setColorFilter(null)
+                        }
+                    }
+                }
+            }
+            override fun onAccuracyChanged(p0: Sensor?, p1: Int) {
+            }
+        }
+        return ret
+    }
+
 }
