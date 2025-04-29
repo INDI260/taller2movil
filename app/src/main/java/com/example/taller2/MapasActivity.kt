@@ -289,15 +289,15 @@ class MapasActivity : AppCompatActivity() {
         }
     }
 
-    fun createMarker(p:GeoPoint, title: String, desc: String, iconID : Int) : Marker? {
+    private fun createMarker(p:GeoPoint, title: String, desc: String, iconID : Int) : Marker? {
         var marker : Marker? = null;
         if(map!=null) {
             marker = Marker(map);
-            if (title != null) marker.setTitle(title);
-            if (desc != null) marker.setSubDescription(desc);
+            if (title != null) marker.title = title;
+            if (desc != null) marker.subDescription = desc;
             if (iconID != 0) {
                 val myIcon = getResources().getDrawable(iconID, this.getTheme());
-                marker.setIcon(myIcon);
+                marker.icon = myIcon;
             }
             marker.setPosition(p);
             marker.setAnchor(Marker.
@@ -328,10 +328,10 @@ class MapasActivity : AppCompatActivity() {
         return ret
     }
 
-    fun findAddress (location : LatLng):String?{
+    private fun findAddress (location : LatLng):String?{
         val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 2)
-        if(addresses != null && !addresses.isEmpty()){
-            val addr = addresses.get(0)
+        if(!addresses.isNullOrEmpty()){
+            val addr = addresses[0]
             val locname = addr.getAddressLine(0)
             return locname
         }
@@ -341,7 +341,7 @@ class MapasActivity : AppCompatActivity() {
     private fun findLocation(address : String):LatLng?{
         val addresses = geocoder.getFromLocationName(address, 1)
         if(addresses != null && !addresses.isEmpty()){
-            val addr = addresses.get(0)
+            val addr = addresses[0]
             val location = LatLng(addr.
             latitude, addr.
             longitude)
@@ -350,7 +350,7 @@ class MapasActivity : AppCompatActivity() {
         return null
     }
 
-    fun createOverlayEvents() : MapEventsOverlay {
+    private fun createOverlayEvents() : MapEventsOverlay {
         val overlayEvents = MapEventsOverlay(object : MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                 return false
@@ -375,12 +375,12 @@ class MapasActivity : AppCompatActivity() {
         Log.i("MapsApp", "Duration: "+road.mDuration/60+" min")
         if(map!=null){
             if(roadOverlay != null){
-                map.getOverlays().remove(roadOverlay);
+                map.overlays.remove(roadOverlay);
             }
             roadOverlay = RoadManager.buildRoadOverlay(road)
             roadOverlay!!.getOutlinePaint().setColor(Color.RED)
-            roadOverlay!!.getOutlinePaint().setStrokeWidth(10F)
-            map.getOverlays().add(roadOverlay)
+            roadOverlay!!.getOutlinePaint().strokeWidth = 10F
+            map.overlays.add(roadOverlay)
         }
     }
 
