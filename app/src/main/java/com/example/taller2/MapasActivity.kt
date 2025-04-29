@@ -122,7 +122,7 @@ class MapasActivity : AppCompatActivity() {
                     map.controller.setCenter(GeoPoint(location.latitude, location.longitude))
                     map.controller.setZoom(18.0)
                     Toast.makeText(this, "La distancia al punto es: " + distance(currentLocation.latitude, currentLocation.longitude, location.latitude, location.longitude) + "Km", Toast.LENGTH_LONG).show()
-                    drawRoute(bogota, GeoPoint(currentLocation.latitude, currentLocation.longitude))
+                    drawRoute(GeoPoint(currentLocation.latitude, currentLocation.longitude), GeoPoint(location.latitude, location.longitude))
                 }
             }
             true
@@ -141,8 +141,8 @@ class MapasActivity : AppCompatActivity() {
         map.overlays.add(createOverlayEvents())
 
         roadManager = OSRMRoadManager(this, "ANDROID")
-//        val policy = ThreadPolicy.Builder().permitAll().build()
-//        StrictMode.setThreadPolicy(policy)
+        val policy = ThreadPolicy.Builder().permitAll().build()
+        StrictMode.setThreadPolicy(policy)
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)!!
