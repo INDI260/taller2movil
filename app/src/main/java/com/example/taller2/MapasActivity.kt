@@ -1,19 +1,19 @@
 package com.example.taller2
 
 import android.Manifest
-import android.app.UiModeManager
-import android.content.Context
 import android.content.IntentSender
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Geocoder
 import android.location.Location
-import com.google.android.gms.location.LocationRequest
 import android.os.Bundle
 import android.os.Looper
+import android.os.StrictMode
+import android.os.StrictMode.ThreadPolicy
 import android.util.Log
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
@@ -22,12 +22,12 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.example.taller2.databinding.ActivityMapasBinding
 import com.example.taller2.entities.MyLocation
 import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.LocationSettingsRequest
@@ -35,9 +35,10 @@ import com.google.android.gms.location.LocationSettingsResponse
 import com.google.android.gms.location.Priority
 import com.google.android.gms.location.SettingsClient
 import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.tasks.Task
 import org.json.JSONObject
+import org.osmdroid.bonuspack.routing.OSRMRoadManager
+import org.osmdroid.bonuspack.routing.RoadManager
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -45,6 +46,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.TilesOverlay
 import java.io.BufferedWriter
 import java.io.File
@@ -54,6 +56,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+
 
 class MapasActivity : AppCompatActivity() {
 
@@ -73,6 +76,9 @@ class MapasActivity : AppCompatActivity() {
     private lateinit var geocoder : Geocoder
 
     private lateinit var map : MapView
+
+    private lateinit var roadManager : OSRMRoadManager
+    private var roadOverlay: Polyline? = null
 
     private lateinit var sensorManager: SensorManager
     private lateinit var lightSensor : Sensor
@@ -116,6 +122,7 @@ class MapasActivity : AppCompatActivity() {
                     map.controller.setCenter(GeoPoint(location.latitude, location.longitude))
                     map.controller.setZoom(18.0)
                     Toast.makeText(this, "La distancia al punto es: " + distance(currentLocation.latitude, currentLocation.longitude, location.latitude, location.longitude) + "Km", Toast.LENGTH_LONG).show()
+                    drawRoute(bogota, GeoPoint(currentLocation.latitude, currentLocation.longitude))
                 }
             }
             true
@@ -132,6 +139,10 @@ class MapasActivity : AppCompatActivity() {
         map.setTileSource(TileSourceFactory.MAPNIK)
         map.setMultiTouchControls(true)
         map.overlays.add(createOverlayEvents())
+
+        roadManager = OSRMRoadManager(this, "ANDROID")
+//        val policy = ThreadPolicy.Builder().permitAll().build()
+//        StrictMode.setThreadPolicy(policy)
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)!!
@@ -328,7 +339,7 @@ class MapasActivity : AppCompatActivity() {
     }
 
     private fun findLocation(address : String):LatLng?{
-        val addresses = geocoder.getFromLocationName(address, 2)
+        val addresses = geocoder.getFromLocationName(address, 1)
         if(addresses != null && !addresses.isEmpty()){
             val addr = addresses.get(0)
             val location = LatLng(addr.
@@ -347,12 +358,30 @@ class MapasActivity : AppCompatActivity() {
             override fun longPressHelper(p: GeoPoint?): Boolean {
                 if(p!=null) {
                     longPressOnMap(p)
-                    //drawRoute(bogota, p)
+                    drawRoute(GeoPoint(currentLocation.latitude, currentLocation.longitude), p)
                 }
                 return true
             }
         })
         return overlayEvents
+    }
+
+    fun drawRoute(start : GeoPoint, finish : GeoPoint){
+        var routePoints = ArrayList<GeoPoint>()
+        routePoints.add(start)
+        routePoints.add(finish)
+        val road = roadManager.getRoad(routePoints)
+        Log.i("MapsApp", "Route length: "+road.mLength+" klm")
+        Log.i("MapsApp", "Duration: "+road.mDuration/60+" min")
+        if(map!=null){
+            if(roadOverlay != null){
+                map.getOverlays().remove(roadOverlay);
+            }
+            roadOverlay = RoadManager.buildRoadOverlay(road)
+            roadOverlay!!.getOutlinePaint().setColor(Color.RED)
+            roadOverlay!!.getOutlinePaint().setStrokeWidth(10F)
+            map.getOverlays().add(roadOverlay)
+        }
     }
 
 
