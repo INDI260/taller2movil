@@ -9,11 +9,13 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.location.Geocoder
 import android.location.Location
 import com.google.android.gms.location.LocationRequest
 import android.os.Bundle
 import android.os.Looper
 import android.util.Log
+import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.activity.result.ActivityResultCallback
 import androidx.activity.result.IntentSenderRequest
@@ -32,12 +34,16 @@ import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.location.LocationSettingsResponse
 import com.google.android.gms.location.Priority
 import com.google.android.gms.location.SettingsClient
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.tasks.Task
 import org.json.JSONObject
 import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.TilesOverlay
 import java.io.BufferedWriter
@@ -58,9 +64,15 @@ class MapasActivity : AppCompatActivity() {
     private val locations = mutableListOf<JSONObject>()
     private val RADIUS_OF_EARTH_KM = 6371.0
     private lateinit var currentLocation : Location
+    private val bogota = GeoPoint(4.609710, -74.081750)
+
+    private lateinit var currentLocationMarker : Marker
+    private lateinit var searchLocationMarker : Marker
+    private var longPressedMarker : Marker? = null
+
+    private lateinit var geocoder : Geocoder
 
     private lateinit var map : MapView
-    private val bogota = GeoPoint(4.62, -74.07)
 
     private lateinit var sensorManager: SensorManager
     private lateinit var lightSensor : Sensor
@@ -76,7 +88,7 @@ class MapasActivity : AppCompatActivity() {
             }
         })
 
-   private val locationPermission = registerForActivityResult(
+    private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
         ActivityResultCallback {
             if(it){
@@ -84,8 +96,7 @@ class MapasActivity : AppCompatActivity() {
             }else{
                 Toast.makeText(this, "No se pudo acceder a la ubicación", Toast.LENGTH_LONG).show()
             }
-        }
-    )
+        })
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,14 +104,34 @@ class MapasActivity : AppCompatActivity() {
         binding = ActivityMapasBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.ubicacion.setOnEditorActionListener { textView, i, keyEvent ->
+            if (i == EditorInfo.IME_ACTION_SEND) {
+                val input = binding.ubicacion.text.toString()
+                val location = findLocation(input)
+                if (location != null) {
+                    val address = findAddress(LatLng(location.latitude, location.longitude))
+                    if (address != null) {
+                        addMarker(GeoPoint(location.latitude, location.longitude), address, false )
+                    }
+                    map.controller.setCenter(GeoPoint(location.latitude, location.longitude))
+                    map.controller.setZoom(18.0)
+                    Toast.makeText(this, "La distancia al punto es: " + distance(currentLocation.latitude, currentLocation.longitude, location.latitude, location.longitude) + "Km", Toast.LENGTH_LONG).show()
+                }
+            }
+            true
+        }
+
         locationClient = LocationServices.getFusedLocationProviderClient(this)
         locationRequest = createLocationRequest()
         locationCallback = createLocationCallback()
+
+        geocoder = Geocoder(baseContext)
 
         Configuration.getInstance().load(this, androidx.preference.PreferenceManager.getDefaultSharedPreferences(this))
         map = binding.mapa
         map.setTileSource(TileSourceFactory.MAPNIK)
         map.setMultiTouchControls(true)
+        map.overlays.add(createOverlayEvents())
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)!!
@@ -146,7 +177,7 @@ class MapasActivity : AppCompatActivity() {
                 currentLocation = location
                 map.controller.setCenter(GeoPoint(location.latitude, location.longitude))
                 writeJSONObject()
-                addMarker(location)
+                addMarker(GeoPoint(location.latitude, location.longitude), "Mi ubicación", false)
             }
         }
         return locationCallback
@@ -211,19 +242,58 @@ class MapasActivity : AppCompatActivity() {
         Log.i("LOCATION", "File modified at path: $file")
     }
 
-    fun addMarker(location : Location){//Add Marker
-        val markerPoint = GeoPoint(location.latitude, location.longitude)
-        val marker = Marker(map)
-        marker.title = "Mi Marcador"
-        val myIcon = getResources().getDrawable(R.drawable.baseline_location_on_24, this.getTheme())
-        marker.icon = myIcon
-        marker.setPosition(markerPoint)
-        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-        map.overlays.add(marker)
+    fun longPressOnMap(p:GeoPoint){
+        if(longPressedMarker!=null)
+            map.getOverlays().remove(longPressedMarker)
+        val address = findAddress(LatLng(p.latitude, p.longitude))
+        val snippet : String
+        if(address!=null) {
+            snippet = address
+        }else{
+            snippet = ""
+        }
+        addMarker(p, snippet, true)
+        Toast.makeText(this, "La distancia al punto es: " + distance(currentLocation.latitude, currentLocation.longitude, p.latitude, p.longitude) + "Km", Toast.LENGTH_LONG).show()
     }
 
-    fun removeMarkers(){
-        map.overlays.clear()
+    fun addMarker(p:GeoPoint, snippet : String, longPressed : Boolean){
+        if(longPressed) {
+            longPressedMarker = createMarker(p, snippet, "", R.drawable.baseline_location_on_24)
+            if (longPressedMarker != null) {
+                map.getOverlays().add(longPressedMarker)
+            }
+        }else{
+            if(snippet == "Mi ubicación"){
+                if(this::currentLocationMarker.isInitialized)
+                    map.overlays.remove(currentLocationMarker)
+                currentLocationMarker = createMarker(p, "Mi ubicación", "", R.drawable.baseline_location_on_24)!!
+                map.overlays.add(currentLocationMarker)
+            }
+            else {
+                if(this::searchLocationMarker.isInitialized)
+                    map.overlays.remove(searchLocationMarker)
+                searchLocationMarker = createMarker(p, snippet, "", R.drawable.baseline_location_on_24)!!
+                map.overlays.add(searchLocationMarker)
+            }
+        }
+    }
+
+    fun createMarker(p:GeoPoint, title: String, desc: String, iconID : Int) : Marker? {
+        var marker : Marker? = null;
+        if(map!=null) {
+            marker = Marker(map);
+            if (title != null) marker.setTitle(title);
+            if (desc != null) marker.setSubDescription(desc);
+            if (iconID != 0) {
+                val myIcon = getResources().getDrawable(iconID, this.getTheme());
+                marker.setIcon(myIcon);
+            }
+            marker.setPosition(p);
+            marker.setAnchor(Marker.
+            ANCHOR_CENTER, Marker.
+            ANCHOR_BOTTOM);
+        }
+        return marker
     }
 
     private fun createLightSensorListener() : SensorEventListener{
@@ -246,5 +316,44 @@ class MapasActivity : AppCompatActivity() {
         }
         return ret
     }
+
+    fun findAddress (location : LatLng):String?{
+        val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 2)
+        if(addresses != null && !addresses.isEmpty()){
+            val addr = addresses.get(0)
+            val locname = addr.getAddressLine(0)
+            return locname
+        }
+        return null
+    }
+
+    private fun findLocation(address : String):LatLng?{
+        val addresses = geocoder.getFromLocationName(address, 2)
+        if(addresses != null && !addresses.isEmpty()){
+            val addr = addresses.get(0)
+            val location = LatLng(addr.
+            latitude, addr.
+            longitude)
+            return location
+        }
+        return null
+    }
+
+    fun createOverlayEvents() : MapEventsOverlay {
+        val overlayEvents = MapEventsOverlay(object : MapEventsReceiver {
+            override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
+                return false
+            }
+            override fun longPressHelper(p: GeoPoint?): Boolean {
+                if(p!=null) {
+                    longPressOnMap(p)
+                    //drawRoute(bogota, p)
+                }
+                return true
+            }
+        })
+        return overlayEvents
+    }
+
 
 }
