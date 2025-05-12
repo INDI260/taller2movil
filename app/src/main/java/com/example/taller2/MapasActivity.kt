@@ -60,45 +60,45 @@ import kotlin.math.sqrt
 
 class MapasActivity : AppCompatActivity() {
 
-    private lateinit var binding : ActivityMapasBinding
-    private lateinit var locationClient : FusedLocationProviderClient
-    private lateinit var locationRequest : LocationRequest
-    private lateinit var locationCallback : LocationCallback
-    private val locations = mutableListOf<JSONObject>()
-    private val RADIUS_OF_EARTH_KM = 6371.0
-    private lateinit var currentLocation : Location
-    private val bogota = GeoPoint(4.609710, -74.081750)
+    private lateinit var binding : ActivityMapasBinding //Actividad principal
+    private lateinit var locationClient : FusedLocationProviderClient //Cliente de la localización
+    private lateinit var locationRequest : LocationRequest // Petición de localización
+    private lateinit var locationCallback : LocationCallback // Callback de localización
+    private val locations = mutableListOf<JSONObject>() // Lista de localizaciones visitadas
+    private val RADIUS_OF_EARTH_KM = 6371.0 //Radio de la tierra en Km
+    private lateinit var currentLocation : Location // Localización actual
+    private val bogota = GeoPoint(4.609710, -74.081750) //Geopointer a bogotá para testing
 
-    private lateinit var currentLocationMarker : Marker
-    private lateinit var searchLocationMarker : Marker
-    private var longPressedMarker : Marker? = null
+    private lateinit var currentLocationMarker : Marker // Marcador de la localización actual
+    private lateinit var searchLocationMarker : Marker // Marcador de la localización de búsqueda
+    private var longPressedMarker : Marker? = null // Marcador de la localización de longpress
 
-    private lateinit var geocoder : Geocoder
+    private lateinit var geocoder : Geocoder //Instancia de geocoder
 
-    private lateinit var map : MapView
+    private lateinit var map : MapView // Mapa OSM
 
-    private lateinit var roadManager : OSRMRoadManager
-    private var roadOverlay: Polyline? = null
+    private lateinit var roadManager : OSRMRoadManager // Maejador de rutas
+    private var roadOverlay: Polyline? = null // Dibujador de rutas
 
-    private lateinit var sensorManager: SensorManager
-    private lateinit var lightSensor : Sensor
-    private lateinit var lightEventListener : SensorEventListener
+    private lateinit var sensorManager: SensorManager // Manejador de sensores
+    private lateinit var lightSensor : Sensor // Sensor de luz
+    private lateinit var lightEventListener : SensorEventListener // Listener de cambios de luz
 
     private val locationSettings =
-        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult(),
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult(), // Verifica si la localización está activa en el teléfono
             ActivityResultCallback {
-            if(it.resultCode == RESULT_OK){
-                startLocationUpdates()
-            }else{
+            if(it.resultCode == RESULT_OK){ // Si se aceptó la petición de localización
+                startLocationUpdates() // Inicia el monitoreo de la localización
+            }else{ // Mensaje de error
                 Toast.makeText(this, "No se pudo acceder a la ubicación", Toast.LENGTH_LONG).show()
             }
         })
 
-    private val locationPermission = registerForActivityResult(
+    private val locationPermission = registerForActivityResult( // Verifica si la aplicación tien permiso para acceder a la localización
         ActivityResultContracts.RequestPermission(),
         ActivityResultCallback {
             if(it){
-                locationSettings()
+                locationSettings() // Revisa si está encendida en el dispositivo
             }else{
                 Toast.makeText(this, "No se pudo acceder a la ubicación", Toast.LENGTH_LONG).show()
             }
@@ -110,40 +110,46 @@ class MapasActivity : AppCompatActivity() {
         binding = ActivityMapasBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Configura el campo de texto de búsqueda con geocoder
         binding.ubicacion.setOnEditorActionListener { textView, i, keyEvent ->
-            if (i == EditorInfo.IME_ACTION_SEND) {
+            if (i == EditorInfo.IME_ACTION_SEND) { // Si se presiona enter en el campo de texto
                 val input = binding.ubicacion.text.toString()
-                val location = findLocation(input)
+                val location = findLocation(input) // Busca la localización con geocoder
                 if (location != null) {
-                    val address = findAddress(LatLng(location.latitude, location.longitude))
+                    val address = findAddress(LatLng(location.latitude, location.longitude)) // Busca la dirección de la localización
                     if (address != null) {
-                        addMarker(GeoPoint(location.latitude, location.longitude), address, false )
+                        addMarker(GeoPoint(location.latitude, location.longitude), address, false ) // Agrega el marcador a la localización
                     }
-                    map.controller.setCenter(GeoPoint(location.latitude, location.longitude))
+                    map.controller.setCenter(GeoPoint(location.latitude, location.longitude)) // Centra el mapa en la localización
                     map.controller.setZoom(18.0)
-                    Toast.makeText(this, "La distancia al punto es: " + distance(currentLocation.latitude, currentLocation.longitude, location.latitude, location.longitude) + "Km", Toast.LENGTH_LONG).show()
-                    drawRoute(GeoPoint(currentLocation.latitude, currentLocation.longitude), GeoPoint(location.latitude, location.longitude))
+                    Toast.makeText(this, "La distancia al punto es: " + distance(currentLocation.latitude, currentLocation.longitude, location.latitude, location.longitude) + "Km", Toast.LENGTH_LONG).show() // Calcula la distancia y la muestra en un toast
+                    drawRoute(GeoPoint(currentLocation.latitude, currentLocation.longitude), GeoPoint(location.latitude, location.longitude)) // Dibuja la ruta a la locación encontrada
                 }
             }
             true
         }
 
+        // Inicializa los elementos de localización
         locationClient = LocationServices.getFusedLocationProviderClient(this)
         locationRequest = createLocationRequest()
         locationCallback = createLocationCallback()
 
+        // Inicializa geocoder
         geocoder = Geocoder(baseContext)
 
+        // Inicializa la configuración del mapa en la app
         Configuration.getInstance().load(this, androidx.preference.PreferenceManager.getDefaultSharedPreferences(this))
         map = binding.mapa
         map.setTileSource(TileSourceFactory.MAPNIK)
         map.setMultiTouchControls(true)
         map.overlays.add(createOverlayEvents())
 
+        // Inicializa el manejador de rutas
         roadManager = OSRMRoadManager(this, "ANDROID")
         val policy = ThreadPolicy.Builder().permitAll().build()
         StrictMode.setThreadPolicy(policy)
 
+        // Inicializa el sensor de luz
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)!!
         lightEventListener = createLightSensorListener()
@@ -152,18 +158,19 @@ class MapasActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause();
-        stopLocationUpdates();
-        sensorManager.unregisterListener(lightEventListener)
+        stopLocationUpdates(); // Detiene la actualización de localización para ahorrar recursos
+        sensorManager.unregisterListener(lightEventListener) // Detiene el sensor de luz
     }
 
     override fun onResume() {
         super.onResume()
-        map.onResume()
+        map.onResume() // Resume el mapa
         map.controller.setZoom(18.0)
-        locationPermission.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
-        sensorManager.registerListener(lightEventListener, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
+        locationPermission.launch(android.Manifest.permission.ACCESS_FINE_LOCATION) // Vuelve a confirmar los permisos y settings de localización
+        sensorManager.registerListener(lightEventListener, lightSensor, SensorManager.SENSOR_DELAY_NORMAL) // Vuelve a iniciar el sensor de luz
     }
 
+    // 
     private fun createLocationRequest() : LocationRequest{
         val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10000)
             .setWaitForAccurateLocation(true)
@@ -329,7 +336,7 @@ class MapasActivity : AppCompatActivity() {
     }
 
     private fun findAddress (location : LatLng):String?{
-        val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 2)
+        val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
         if(!addresses.isNullOrEmpty()){
             val addr = addresses[0]
             val locname = addr.getAddressLine(0)
